@@ -28,6 +28,7 @@ class PDBParser:
         self.num_fixed_lines = 0
         self.covlinkage = namedtuple("covlinkage", "id1 chain1 pos1 conf1 id2 chain2 pos2 conf2")
         self.proteinmap, self.modres, self.covalent, self.altconformations, self.corrected_pdb = self.parse_pdb()
+        self.pdb_file_was_corrected = False
 
     def parse_pdb(self):
         """Extracts additional information from PDB files.
@@ -53,7 +54,6 @@ class PDBParser:
         previous_ter = False
 
         model_dict = {0: list()}
-
         # Standard without fixing
         if not config.NOFIX:
             if not config.PLUGIN_MODE:
@@ -85,12 +85,14 @@ class PDBParser:
                     if other_models:
                         logger.info(f'selecting model {config.MODEL} for analysis')
                     corrected_pdb = ''.join(model_dict[0])
+                    self.pdb_file_was_corrected = True
                     corrected_lines = model_dict[0]
                     if current_model > 0:
                         corrected_pdb += ''.join(model_dict[config.MODEL])
                         corrected_lines += model_dict[config.MODEL]
                 except KeyError:
                     corrected_pdb = ''.join(model_dict[1])
+                    self.pdb_file_was_corrected = True
                     corrected_lines = model_dict[1]
                     config.MODEL = 1
                     logger.warning('invalid model number specified, using first model instead')
