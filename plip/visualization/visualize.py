@@ -37,7 +37,11 @@ def visualize_in_pymol(plcomplex):
     start_pymol(run=True, options='-pcq', quiet=not config.VERBOSE and not config.SILENT)
     vis.set_initial_representations()
 
-    cmd.load(plcomplex.sourcefile)
+    if plcomplex.sourcefiles['pdbcomplex'] is not None:
+        cmd.load(plcomplex.sourcefiles['pdbcomplex'])
+    else:
+        cmd.read_pdbstr(plcomplex.sourcefiles['pdbstring'])
+
     cmd.frame(config.MODEL)
     current_name = cmd.get_object_list(selection='(all)')[0]
 
