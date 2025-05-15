@@ -27,8 +27,8 @@ class PDBParser:
         self.pdbpath = pdbpath
         self.num_fixed_lines = 0
         self.covlinkage = namedtuple("covlinkage", "id1 chain1 pos1 conf1 id2 chain2 pos2 conf2")
-        self.proteinmap, self.modres, self.covalent, self.altconformations, self.corrected_pdb = self.parse_pdb()
         self.pdb_file_was_corrected = False
+        self.proteinmap, self.modres, self.covalent, self.altconformations, self.corrected_pdb = self.parse_pdb()
 
     def parse_pdb(self):
         """Extracts additional information from PDB files.
