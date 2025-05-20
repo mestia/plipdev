@@ -27,6 +27,7 @@ class PDBParser:
         self.pdbpath = pdbpath
         self.num_fixed_lines = 0
         self.covlinkage = namedtuple("covlinkage", "id1 chain1 pos1 conf1 id2 chain2 pos2 conf2")
+        self.pdb_file_was_corrected = False
         self.proteinmap, self.modres, self.covalent, self.altconformations, self.corrected_pdb = self.parse_pdb()
 
     def parse_pdb(self):
@@ -53,7 +54,6 @@ class PDBParser:
         previous_ter = False
 
         model_dict = {0: list()}
-
         # Standard without fixing
         if not config.NOFIX:
             if not config.PLUGIN_MODE:
@@ -85,12 +85,14 @@ class PDBParser:
                     if other_models:
                         logger.info(f'selecting model {config.MODEL} for analysis')
                     corrected_pdb = ''.join(model_dict[0])
+                    self.pdb_file_was_corrected = True
                     corrected_lines = model_dict[0]
                     if current_model > 0:
                         corrected_pdb += ''.join(model_dict[config.MODEL])
                         corrected_lines += model_dict[config.MODEL]
                 except KeyError:
                     corrected_pdb = ''.join(model_dict[1])
+                    self.pdb_file_was_corrected = True
                     corrected_lines = model_dict[1]
                     config.MODEL = 1
                     logger.warning('invalid model number specified, using first model instead')
@@ -1484,7 +1486,7 @@ class PDBComplex:
 
         if not as_string:
             self.sourcefiles['filename'] = os.path.basename(self.sourcefiles['pdbcomplex'])
-        self.protcomplex, self.filetype = read_pdb(self.corrected_pdb, as_string= (self.corrected_pdb != pdbpath)) # self.corrected_pdb may fallback to pdbpath
+        self.protcomplex, self.filetype = read_pdb(self.corrected_pdb, as_string= as_string or pdbparser.pdb_file_was_corrected) # self.corrected_pdb may fallback to pdbpath
 
         # Update the model in the Mapper class instance
         self.Mapper.original_structure = self.protcomplex.OBMol
@@ -1549,6 +1551,11 @@ class PDBComplex:
             logger.info(f'analyzing {num_ligs} ligands')
         else:
             logger.info(f'structure contains no ligands')
+
+        if as_string or pdbparser.pdb_file_was_corrected:
+            self.sourcefiles['pdbstring'] = self.corrected_pdb
+        else:
+            self.sourcefiles['pdbstring'] = open(pdbpath, 'r').read()
 
     def analyze(self):
         """Triggers analysis of all complexes in structure"""
