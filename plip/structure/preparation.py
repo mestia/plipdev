@@ -1506,6 +1506,11 @@ class PDBComplex:
         else:
             logger.info(f'structure contains no ligands')
 
+        if as_string or pdbparser.pdb_file_was_corrected:
+            self.sourcefiles['pdbstring'] = self.corrected_pdb
+        else:
+            self.sourcefiles['pdbstring'] = open(pdbpath, 'r').read()
+
     def analyze(self):
         """Triggers analysis of all complexes in structure"""
         for ligand in self.ligands:
