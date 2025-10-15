@@ -326,7 +326,9 @@ def main():
             quoted = re.sub(pattern=r'([{,]\s*)([a-zA-Z0-9_]+)\s*:', repl=r'\1"\2":', string=arguments.regions)
             # add quotes around values (residue numbers)
             quoted = re.sub(pattern=r':\s*([0-9,\s\-]+?)\s*(?=,\s*"[a-zA-Z0-9_]+":|})', repl=r': "\1"', string=quoted)
-            config.REGIONS = ast.literal_eval(quoted)  # convert string to tuple of one or two dictionaries
+            # add comma to tuples with only one dictionary (without comma would not be treated as tuple)
+            ensure_tuples = re.sub(r'\((\s*{[^{}]*}\s*)\)', r'(\1,)', quoted)
+            config.REGIONS = ast.literal_eval(ensure_tuples)  # convert string to tuple(s) of one or two dictionaries
             if not isinstance(config.REGIONS, list):
                 # embed single tuple in a list to give the regions config a consistent data structure
                 config.REGIONS = [config.REGIONS]
