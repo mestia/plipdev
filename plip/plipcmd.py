@@ -126,7 +126,7 @@ def remove_duplicates(slist):
     return unique
 
 
-def run_analysis(inputstructs, inputpdbids, chains=None):
+def run_analysis(inputstructs, inputpdbids):
     """Main function. Calls functions for processing, report generation and visualization."""
     pdbid, pdbpath = None, None
     # @todo For multiprocessing, implement better stacktracing for errors
@@ -228,9 +228,6 @@ def main():
                             help="Allows to define one or multiple chains as peptide ligands or to detect inter-chain contacts",
                             nargs="+")
     ligandtype.add_argument("--intra", dest="intra", help="Allows to define one chain to analyze intra-chain contacts.")
-    parser.add_argument("--residues", dest="residues", default=[], nargs="+",
-                        help="""Allows to specify which residues of the chain(s) should be considered as peptide ligands.
-                        Give single residues (separated with comma) or ranges (with dash) or both, for several chains separate selections with one space""")
     parser.add_argument("--keepmod", dest="keepmod", default=False,
                         help="Keep modified residues as ligands",
                         action="store_true")
@@ -256,17 +253,19 @@ def main():
                             help=argparse.SUPPRESS)
 
     # Add argument to define receptor and ligand chains
-    parser.add_argument("--chains", dest="chains", type=str,
+    ligandtype.add_argument("--chains", dest="chains", type=str,
                         help="Specify chains as receptor/ligand groups, e.g., '[['A'], ['B']]'. "
                              "Use format [['A'], ['B', 'C']] to define A as receptor, and B, C as ligands.")
 
+    # Add argument to define receptor and ligand regions of the protein
+    ligandtype.add_argument("--regions", dest="regions", type=str,
+                        help="Specify protein regions as receptor/ligand groups by chain and residue numbers. "
+                             "e.g., ({A: 1-20, 25, 26, 28}, {A: 54-63, B: 17-46}) to define residues"
+                             "1-20, 25, 26, and 28 of chain A as ligand and residues 54-63 of chain A and residues"
+                             "17-46 of chain B as receptor. Defining a receptor is optional. Multiple ligand-receptor"
+                             "pairs can be parsed as a list of tuples [({A: 1-20}, {B: 17-46}), ({C: 5-43}, {D: 7})].")
 
     arguments = parser.parse_args()
-    # make sure, residues is only used together with --inter (could be expanded to --intra in the future)
-    if arguments.residues and not (arguments.peptides or arguments.intra):
-        parser.error("The --residues option requires specification of a chain with --inter or --peptide")
-    if arguments.residues and len(arguments.residues)!=len(arguments.peptides):
-        parser.error("Please provide residue numbers or ranges for each chain specified. Separate selections with a single space.")
     # configure log levels
     config.VERBOSE = True if arguments.verbose else False
     config.QUIET = True if arguments.quiet else False
@@ -293,7 +292,6 @@ def main():
     config.BREAKCOMPOSITE = arguments.breakcomposite
     config.ALTLOC = arguments.altlocation
     config.PEPTIDES = arguments.peptides
-    config.RESIDUES = dict(zip(arguments.peptides, map(residue_list, arguments.residues)))
     config.INTRA = arguments.intra
     config.NOFIX = arguments.nofix
     config.NOFIXFILE = arguments.nofixfile
@@ -304,6 +302,56 @@ def main():
     config.NOHYDRO = arguments.nohydro
     config.MODEL = arguments.model
 
+    def expand_ranges(residue_ranges):
+        """
+        Takes '1-3, 5, 7' -> [1, 2, 3, 5, 7]
+        """
+        parts = [p.strip() for p in residue_ranges.split(',')]
+        res_list = []
+        for p in parts:
+            if '-' in p:
+                start, end = p.split('-')
+                res_list.extend(range(int(start), int(end) + 1))
+            else:
+                res_list.append(int(p))
+        return res_list
+
+    try:
+        # add inner quotes for Python backend and expand residue ranges to lists of residue numbers.
+        if not arguments.regions:
+            config.REGIONS = None
+        else:
+            import re
+            # add quotes around keys (chain IDs)
+            quoted = re.sub(pattern=r'([{,]\s*)([a-zA-Z0-9_]+)\s*:', repl=r'\1"\2":', string=arguments.regions)
+            # add quotes around values (residue numbers)
+            quoted = re.sub(pattern=r':\s*([0-9,\s\-]+?)\s*(?=,\s*"[a-zA-Z0-9_]+":|})', repl=r': "\1"', string=quoted)
+            # add comma to tuples with only one dictionary (without comma would not be treated as tuple)
+            ensure_tuples = re.sub(r'\((\s*{[^{}]*}\s*)\)', r'(\1,)', quoted)
+            config.REGIONS = ast.literal_eval(ensure_tuples)  # convert string to tuple(s) of one or two dictionaries
+            if not isinstance(config.REGIONS, list):
+                # embed single tuple in a list to give the regions config a consistent data structure
+                config.REGIONS = [config.REGIONS]
+            if not all(isinstance(lig_rec, tuple) for lig_rec in config.REGIONS) or any(
+                    len(lig_rec) > 2 for lig_rec in config.REGIONS) or not all(
+                    isinstance(reg, dict) for lig_rec in config.REGIONS for reg in lig_rec):
+                raise ValueError(
+                    "Regions must be specified by tuples of one or two dictionaries (ligand, receptor)")
+            config.REGIONS = [
+                tuple(
+                    {chain: expand_ranges(residues) for chain, residues in dct.items()}
+                    for dct in lig_rec
+                )
+                for lig_rec in config.REGIONS
+            ]
+            config.REGIONS = [
+                (lig_rec[0], None) if len(lig_rec) == 1 else (lig_rec[0], lig_rec[1])
+                for lig_rec in config.REGIONS
+            ]
+    except (ValueError, SyntaxError):
+        parser.error("The --regions option must be in the format '({A: 1-20, 25, 27}, {A: 54-63, B: 17-46})' Multiple region tuples can be given in a list.")
+
+
     try:
         # add inner quotes for python backend
         if not arguments.chains:
@@ -312,7 +360,6 @@ def main():
             import re
             quoted_input = re.sub(r'(?<!["\'])\b([a-zA-Z0-9_]+)\b(?!["\'])', r'"\1"', arguments.chains)
             config.CHAINS = ast.literal_eval(quoted_input)
-        print(config.CHAINS)
         if config.CHAINS and not all(isinstance(c, list) for c in config.CHAINS):
             raise ValueError("Chains should be specified as a list of lists, e.g., '[[A], [B, C]]'.")
     except (ValueError, SyntaxError):
