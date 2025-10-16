@@ -3,8 +3,6 @@ from setuptools.command.build_ext import build_ext
 from setuptools.command.install import install
 from distutils.command.build import build
 
-from plip.basic import config
-
 def install_pkg_via_pip(package):
     import sys
     import subprocess
@@ -74,7 +72,7 @@ class CustomBuildExt(build_ext):
         return
 
 setup(name='plip',
-    version=config.__version__,
+    version='2.4.0',
     description='PLIP - Fully automated protein-ligand interaction profiler',
     classifiers=[
         'Development Status :: 5 - Production/Stable',
