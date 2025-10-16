@@ -55,15 +55,29 @@ def whichchain(atom):
     return atom.GetResidue().GetChain() if atom.GetResidue() is not None else None
 
 
-def residue_belongs_to_receptor(res, config):
+def residue_belongs_to_receptor(res, regions=None):
     """tests whether the residue is defined as receptor and is not part of a peptide or residue ligand."""
-    if config.CHAINS:
+    if regions:
+        ligand_region, bs_region = regions
+        chain = res.GetChain()
+        num = res.GetNum()
+        if ligand_region and bs_region:  # both ligand and receptor region were defined
+            if num in ligand_region.get(chain, []):
+                return False  # residue belongs to ligand
+            if num in bs_region.get(chain, []):
+                return True  # residue belongs to receptor and not to ligand
+            return False
+        else:
+            return num not in ligand_region.get(chain, [])
+
+    elif config.CHAINS:
         if config.CHAINS[0] and config.CHAINS[1]:  # if receptor and ligand chains were given
             return res.GetChain() in config.CHAINS[0] and res.GetChain() not in config.CHAINS[1]
             # True if residue is part of receptor chains and not of ligand chains
         if config.CHAINS[1]:  # if only ligand chains were given
             return res.GetChain() not in config.CHAINS[1]  # True if residue is not part of ligand chains
         return False  # if only receptor chains were given or both is empty
+
     return res.GetChain() not in config.PEPTIDES  # True if residue is not part of peptide ligand.
 
 
@@ -229,6 +243,18 @@ def start_pymol(quiet=False, options='-p', run=False):
         initialize_pymol(options)
     if quiet:
         pymol.cmd.feedback('disable', 'all', 'everything')
+
+
+def select_region(region):
+    """region is a dictionary with chains as keys and a list of residue numbers as values."""
+    selection = f"(chain "
+    for i, (chain, res_numbers) in enumerate(region.items()):
+        selection += f"{chain} and not resn HOH and resi {'+'.join(map(str, res_numbers))}"
+        if not i == len(region) - 1:
+            selection += ") or (chain "
+        else:
+            selection += ")"
+    return selection
 
 
 def nucleotide_linkage(residues):
