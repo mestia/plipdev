@@ -1,10 +1,14 @@
+[build-system]
+build-backend = "setuptools.build_meta"
+requires = ["setuptools","pip","requests"]
+
 [project]
 name = "plip"
+license = "GPL-2.0-only"
 dynamic = ["version"]
 description = "PLIP - Fully automated protein-ligand interaction profiler"
 readme = "README.md"
 requires-python = ">=3.6"
-license = {file = "LICENSE.txt"}
 
 authors = [
     {name = "PharmAI GmbH", email = "hello@pharm.ai"}
@@ -19,7 +23,6 @@ classifiers = [
     "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Science/Research",
     "Natural Language :: English",
-    "License :: OSI Approved :: GNU General Public License v2 (GPLv2)",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.6",
     "Programming Language :: Python :: 3.7",
@@ -33,11 +36,9 @@ classifiers = [
 
 dependencies = [
     "numpy>=1.13.3",
-    "lxml>=4.2.1"
+    "lxml>=4.2.1",
+    "openbabel>=3.1.1",
 ]
-
-[project.optional-dependencies]
-openbabel = ["openbabel>=3.0.0"]
 
 [project.urls]
 Homepage = "https://github.com/pharmai/plip"
@@ -46,8 +47,8 @@ Repository = "https://github.com/pharmai/plip"
 [project.scripts]
 plip = "plip.plipcmd:main"
 
-[tool.setuptools]
-packages = ["plip"]
+[tool.setuptools.packages.find]
+include = ["plip*"]
 
 [tool.setuptools.dynamic]
 version = {attr = "plip.basic.config.__version__"}
