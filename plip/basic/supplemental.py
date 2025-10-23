@@ -198,9 +198,17 @@ def cluster_doubles(double_list):
 # File operations
 #################
 
-def tilde_expansion(folder_path):
+def tilde_expansion(folder_paths):
     """Tilde expansion, i.e. converts '~' in paths into <value of $HOME>."""
-    return os.path.expanduser(folder_path) if '~' in folder_path else folder_path
+    if isinstance(folder_paths, list):
+        expanded_paths = []
+        for p in folder_paths:
+            if "~" in p:
+                p = os.path.expanduser(p)
+            expanded_paths.append(p)
+        return expanded_paths
+    else:
+        return os.path.expanduser(folder_paths) if "~" in folder_paths else folder_paths
 
 
 def folder_exists(folder_path):
