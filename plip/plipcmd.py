@@ -39,18 +39,28 @@ def threshold_limiter(aparser, arg):
         aparser.error("All thresholds have to be values larger than zero.")
     return arg
 
-def residue_list(input_string):
-    """Parse mix of residue numbers and ranges passed with the --residues flag into one list"""
-    result = []
-    for part in input_string.split(','):
-        if '-' in part:
-            start, end = map(int, part.split('-'))
-            result.extend(range(start, end + 1))
-        else:
-            result.append(int(part))
-    return result
 
-def process_pdb(pdbfile, outpath, as_string=False, outputprefix='report'):
+def parse_report_filename(parser, name_config):
+    if name_config is not None:
+        dir_part, name_config = os.path.split(name_config)
+        if not name_config:  # provided filename is a directory.
+            parser.error(f"Report filename must be a file basename not a directory.")
+        if dir_part:  # provided filename contains a directory, but file will be written to outpath.
+            logger.warning(f"Report will be written to {config.OUTPATH}")
+        base_extensions = name_config.split(".")
+        name_config = base_extensions[0]  # remove all file extensions
+
+        if len(base_extensions) > 1:  # Print a warning when improper file extensions were given.
+            first_ext_invalid = base_extensions[1] not in ["xml", "txt"]
+            non_compressed_warning = not config.COMPRESS and (len(base_extensions) > 2 or first_ext_invalid)
+            compressed_warning = len(base_extensions) == 2 or (len(base_extensions) >= 3 and (
+                        len(base_extensions) > 3 or (first_ext_invalid or base_extensions[2] != "gz")))
+            if non_compressed_warning or compressed_warning:
+                logger.warning("Improper report filename extension(s) will be replaced.")
+    return name_config
+
+
+def process_pdb(pdbfile, outpath, as_string=False, batch_idx=None):
     """Analysis of a single PDB file with optional chain filtering."""
     if not as_string:
         pdb_file_name = pdbfile.split('/')[-1]
@@ -65,9 +75,6 @@ def process_pdb(pdbfile, outpath, as_string=False, outputprefix='report'):
         mol.characterize_complex(ligand)
 
     create_folder_if_not_exists(outpath)
-
-    # Generate the report files
-    streport = StructureReport(mol, outputprefix=outputprefix)
 
     config.MAXTHREADS = min(config.MAXTHREADS, len(mol.interaction_sets))
 
@@ -86,11 +93,20 @@ def process_pdb(pdbfile, outpath, as_string=False, outputprefix='report'):
         else:
             [visualize_in_pymol(plcomplex) for plcomplex in complexes]
 
-    if config.XML:  # Generate report in xml format
-        streport.write_xml(as_string=config.STDOUT)
+    # Generate the report files
+    if config.XML or config.TXT:
+        # set default filename prefix
+        name = mol.pymol_name.upper() if as_string else os.path.splitext(os.path.basename(pdbfile))[0]
+        # for batch processing add batch index to custom report names
+        idx_str = f"_{batch_idx}" if batch_idx is not None else ""
+        outprefix = f"{name}_report" if config.OUTPUTFILENAME is None else f"{config.OUTPUTFILENAME}{idx_str}"
+        streport = StructureReport(mol, outputprefix=outprefix)
 
-    if config.TXT:  # Generate report in txt (rst) format
-        streport.write_txt(as_string=config.STDOUT)
+        if config.XML:  # Generate report in xml format
+            streport.write_xml(as_string=config.STDOUT)
+
+        if config.TXT:  # Generate report in txt (rst) format
+            streport.write_txt(as_string=config.STDOUT)
 
 
 def download_structure(inputpdbid):
@@ -129,18 +145,18 @@ def remove_duplicates(slist):
 def run_analysis(inputstructs, inputpdbids):
     """Main function. Calls functions for processing, report generation and visualization."""
     pdbid, pdbpath = None, None
+    batch_idx = None
     # @todo For multiprocessing, implement better stacktracing for errors
     # Print title and version
     logger.info(f'Protein-Ligand Interaction Profiler (PLIP) {__version__}')
     logger.info(f'brought to you by: {config.__maintainer__}')
     logger.info(f'please cite: {config.__citation_information__}')
-    output_prefix = config.OUTPUTFILENAME
 
     if inputstructs is not None:  # Process PDB file(s)
-        num_structures = len(inputstructs)  # @question: how can it become more than one file? The tilde_expansion function does not consider this case.
+        num_structures = len(inputstructs)
         inputstructs = remove_duplicates(inputstructs)
         read_from_stdin = False
-        for inputstruct in inputstructs:
+        for idx, inputstruct in enumerate(inputstructs):
             if inputstruct == '-':  # @expl: when user gives '-' as input, pdb file is read from stdin
                 inputstruct = sys.stdin.read()
                 read_from_stdin = True
@@ -154,19 +170,16 @@ def run_analysis(inputstructs, inputpdbids):
                     logger.error('empty PDB file')
                     sys.exit(1)
                 if num_structures > 1:
-                    basename = inputstruct.split('.')[-2].split('/')[-1]
-                    config.OUTPATH = '/'.join([config.BASEPATH, basename])
-                    output_prefix = 'report'
-            process_pdb(inputstruct, config.OUTPATH, as_string=read_from_stdin, outputprefix=output_prefix)
+                    batch_idx = idx
+            process_pdb(inputstruct, config.OUTPATH, as_string=read_from_stdin, batch_idx=batch_idx)
     else:  # Try to fetch the current PDB structure(s) directly from the RCBS server
         num_pdbids = len(inputpdbids)
         inputpdbids = remove_duplicates(inputpdbids)
-        for inputpdbid in inputpdbids:
+        for idx, inputpdbid in enumerate(inputpdbids):
             pdbpath, pdbid = download_structure(inputpdbid)
             if num_pdbids > 1:
-                config.OUTPATH = '/'.join([config.BASEPATH, pdbid[1:3].upper(), pdbid.upper()])
-                output_prefix = 'report'
-            process_pdb(pdbpath, config.OUTPATH, outputprefix=output_prefix)
+                batch_idx = idx
+            process_pdb(pdbpath, config.OUTPATH, batch_idx=batch_idx)
 
     if (pdbid is not None or inputstructs is not None) and config.BASEPATH is not None:
         if config.BASEPATH in ['.', './']:
@@ -197,6 +210,10 @@ def main():
                         action="store_true")
     parser.add_argument("-t", "--txt", dest="txt", default=False, help="Generate report file in TXT (RST) format",
                         action="store_true")
+    parser.add_argument("-z", "--gzip", dest="compress", default=False,
+                        help="XML and TXT report files will be gzip compressed.", action="store_true")
+    parser.add_argument("--name", dest="outputfilename", default=None,
+                        help="Set a filename for the report TXT and XML files.")
     parser.add_argument("-y", "--pymol", dest="pymol", default=False, help="Additional PyMOL session files",
                         action="store_true")
     parser.add_argument("--maxthreads", dest="maxthreads", default=multiprocessing.cpu_count(),
@@ -221,8 +238,6 @@ def main():
     parser.add_argument("--dnareceptor", dest="dnareceptor", default=False,
                         help="Treat nucleic acids as part of the receptor structure (together with any present protein) instead of as a ligand.",
                         action="store_true")
-    parser.add_argument("--name", dest="outputfilename", default="report",
-                        help="Set a filename for the report TXT and XML files. Will only work when processing single structures.")
     ligandtype = parser.add_mutually_exclusive_group()  # Either peptide/inter or intra mode
     ligandtype.add_argument("--peptides", "--inter", dest="peptides", default=[],
                             help="Allows to define one or multiple chains as peptide ligands or to detect inter-chain contacts",
@@ -281,6 +296,7 @@ def main():
     config.MAXTHREADS = arguments.maxthreads
     config.XML = arguments.xml
     config.TXT = arguments.txt
+    config.COMPRESS = arguments.compress
     config.PICS = arguments.pics
     config.PYMOL = arguments.pymol
     config.STDOUT = arguments.stdout
@@ -299,6 +315,9 @@ def main():
     config.KEEPMOD = arguments.keepmod
     config.DNARECEPTOR = arguments.dnareceptor
     config.OUTPUTFILENAME = arguments.outputfilename
+    if config.OUTPUTFILENAME is not None:
+        if config.XML or config.TXT:
+            config.OUTPUTFILENAME = parse_report_filename(parser, config.OUTPUTFILENAME)
     config.NOHYDRO = arguments.nohydro
     config.MODEL = arguments.model
 
@@ -394,8 +413,8 @@ def main():
         parser.error("The water bridge minimum distance has to be smaller than the water bridge maximum distance.")
     if not config.WATER_BRIDGE_OMEGA_MIN < config.WATER_BRIDGE_OMEGA_MAX:
         parser.error("The water bridge omega minimum angle has to be smaller than the water bridge omega maximum angle")
-    expanded_path = tilde_expansion(arguments.input) if arguments.input is not None else None
-    run_analysis(expanded_path, arguments.pdbid)  # Start main script
+    expanded_paths = tilde_expansion(arguments.input) if arguments.input is not None else None
+    run_analysis(expanded_paths, arguments.pdbid)  # Start main script
 
 
 if __name__ == '__main__':
