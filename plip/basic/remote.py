@@ -21,11 +21,12 @@ class VisualizerData:
 
         # General Information
         self.lig_members = sorted(pli.ligand.members)
-        self.sourcefile = pcomp.sourcefiles['pdbcomplex']
+        self.source_pdb_file_content = pcomp.sourcefiles['pdbstring'] # store pdb file content as string
         self.corrected_pdb = pcomp.corrected_pdb
         self.pdbid = mol.pymol_name
         self.hetid = ligand.hetid
         self.ligandtype = ligand.type
+        self.regions = ligand.regions
         self.chain = ligand.chain if not ligand.chain == "0" else ""  # #@todo Fix this
         self.position = str(ligand.position)
         self.uid = ":".join([self.hetid, self.chain, self.position])
