@@ -72,7 +72,7 @@ class CustomBuildExt(build_ext):
         return
 
 setup(name='plip',
-    version='2.4.0',
+    version='3.0.0',
     description='PLIP - Fully automated protein-ligand interaction profiler',
     classifiers=[
         'Development Status :: 5 - Production/Stable',
